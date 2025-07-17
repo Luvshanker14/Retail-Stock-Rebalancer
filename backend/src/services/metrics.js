@@ -230,19 +230,42 @@ async function restoreLabeledCounter(redisKeyPrefix, counter, labelKeys) {
 
 
 
-(async () => {
-  try {
-    await restoreLabeledCounter('stocks_added_total', stockCounter, ['admin_email', 'store_id']);
-    await restoreLabeledCounter('stocks_updated_total', stockUpdatedCounter, ['admin_email', 'store_id']);
-    await restoreLabeledCounter('stocks_removed_total', stockRemovedCounter, ['admin_email', 'store_id']);
-    await restoreLabeledCounter('low_stock_alerts_total', lowStockAlertCounter, ['admin_email', 'store_id']);
-    await restoreLabeledCounter('redis_cache_misses_total', redisCacheMissCounter, ['admin_email', 'store_id']);
-    await restoreLabeledCounter('redis_cache_hits_total', redisCacheHitCounter, ['admin_email', 'store_id']);
-    // await restoreLabeledCounter('kafka_messages_produced_total', kafkaMessagesProducedCounter, ['admin_email', 'store_id']);
-  } catch (err) {
-    console.error('❌ Error restoring counters from Redis:', err.message);
+// Function to restore counters with retry logic
+async function restoreCountersWithRetry() {
+  const maxRetries = 3;
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      // Wait a bit for Redis to be ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      await restoreLabeledCounter('stocks_added_total', stockCounter, ['admin_email', 'store_id']);
+      await restoreLabeledCounter('stocks_updated_total', stockUpdatedCounter, ['admin_email', 'store_id']);
+      await restoreLabeledCounter('stocks_removed_total', stockRemovedCounter, ['admin_email', 'store_id']);
+      await restoreLabeledCounter('low_stock_alerts_total', lowStockAlertCounter, ['admin_email', 'store_id']);
+      await restoreLabeledCounter('redis_cache_misses_total', redisCacheMissCounter, ['admin_email', 'store_id']);
+      await restoreLabeledCounter('redis_cache_hits_total', redisCacheHitCounter, ['admin_email', 'store_id']);
+      
+      console.log('✅ Successfully restored counters from Redis');
+      break; // Success, exit retry loop
+    } catch (err) {
+      retries++;
+      console.error(`❌ Error restoring counters from Redis (attempt ${retries}/${maxRetries}):`, err.message);
+      
+      if (retries >= maxRetries) {
+        console.log('⚠️ Skipping counter restoration after max retries');
+        break;
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
   }
-})();
+}
+
+// Start counter restoration after a delay to ensure Redis is ready
+setTimeout(restoreCountersWithRetry, 5000);
 // (async () => {
 //   try {
 //     const keys = await redisClient.keys('stocks_added_total:*');
@@ -330,49 +353,55 @@ async function restoreLabeledCounter(redisKeyPrefix, counter, labelKeys) {
 //   }
 // })();
 
-(async () => {
-  try {
-    const valkafka = await redisClient.get('kafka_messages_produced_total');
-    if (valkafka) {
-      kafkaMessagesProducedCounter.inc(Number(valkafka));
+// Function to restore simple counters with retry logic
+async function restoreSimpleCountersWithRetry() {
+  const maxRetries = 3;
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      // Wait a bit for Redis to be ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const valkafka = await redisClient.get('kafka_messages_produced_total');
+      if (valkafka) {
+        kafkaMessagesProducedCounter.inc(Number(valkafka));
+      }
+      
+      const val = await redisClient.get('stores_added_total');
+      if (val) {
+        storeCounter.inc(Number(val));
+      }
+      
+      const valupdated = await redisClient.get('stores_updated_total');
+      if (valupdated) {
+        storeUpdatedCounter.inc(Number(valupdated));
+      }
+      
+      const valremoved = await redisClient.get('stores_removed_total');
+      if (valremoved) {
+        storeRemovedCounter.inc(Number(valremoved));
+      }
+      
+      console.log('✅ Successfully restored simple counters from Redis');
+      break; // Success, exit retry loop
+    } catch (err) {
+      retries++;
+      console.error(`❌ Error restoring simple counters from Redis (attempt ${retries}/${maxRetries}):`, err.message);
+      
+      if (retries >= maxRetries) {
+        console.log('⚠️ Skipping simple counter restoration after max retries');
+        break;
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
-  } catch (err) {
-    console.error('Error restoring counter from Redis:', err.message);
   }
-})();
+}
 
-(async () => {
-  try {
-    const val = await redisClient.get('stores_added_total');
-    if (val) {
-      storeCounter.inc(Number(val));
-    }
-  } catch (err) {
-    console.error('Error restoring counter from Redis:', err.message);
-  }
-})();
-
-(async () => {
-  try {
-    const valupdated = await redisClient.get('stores_updated_total');
-    if (valupdated) {
-      storeUpdatedCounter.inc(Number(valupdated));
-    }
-  } catch (err) {
-    console.error('Error restoring counter from Redis:', err.message);
-  }
-})();
-
-(async () => {
-  try {
-    const valremoved = await redisClient.get('stores_removed_total');
-    if (valremoved) {
-      storeRemovedCounter.inc(Number(valremoved));
-    }
-  } catch (err) {
-    console.error('Error restoring counter from Redis:', err.message);
-  }
-})();
+// Start simple counter restoration after a delay to ensure Redis is ready
+setTimeout(restoreSimpleCountersWithRetry, 7000);
 
 
 module.exports = { 

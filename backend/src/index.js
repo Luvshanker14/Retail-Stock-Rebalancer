@@ -50,9 +50,15 @@ const port = process.env.PORT || 3000;
 // Kafka setup
 const kafka = new Kafka({
   clientId: process.env.KAFKA_CLIENT_ID || 'retail-rebalancer',
-  brokers: (process.env.KAFKA_BROKER ? process.env.KAFKA_BROKERS.split(',') : ['localhost:9092']),
+  brokers: (process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ['localhost:9092']),
 });
-startKafkaConsumer();
+
+// Only start Kafka consumer if brokers are configured
+if (process.env.KAFKA_BROKERS) {
+  startKafkaConsumer();
+} else {
+  console.log('⚠️ Kafka brokers not configured, skipping Kafka consumer');
+}
 // Redis client
 // const redisClient = redis.createClient();
 
@@ -87,6 +93,28 @@ app.get('/', async (req, res) => {
 app.get('/metrics', async (req, res) => {
   res.set('Content-Type', promClient.register.contentType);
   res.send(await promClient.register.metrics());
+});
+
+// Redis status endpoint
+app.get('/redis-status', async (req, res) => {
+  try {
+    const pong = await redisClient.ping();
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    const urlObj = new URL(redisUrl);
+    
+    res.json({
+      status: 'connected',
+      redis_host: `${urlObj.hostname}:${urlObj.port}`,
+      ping_response: pong,
+      using_cloud_redis: !!process.env.REDIS_URL
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      redis_url_configured: !!process.env.REDIS_URL
+    });
+  }
 });
 
 app.listen(port, () => {
